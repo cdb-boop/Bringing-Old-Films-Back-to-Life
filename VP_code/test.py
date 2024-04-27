@@ -58,6 +58,8 @@ def Load_dataset(opts,config_dict):
     return val_loader
 
 def validation(opts, config_dict, loaded_model, val_loader):
+    if len(val_loader) == 0:
+        raise Exception("No images found!")
 
     if "metrics" in config_dict['val']:
         calculate_metric = True
