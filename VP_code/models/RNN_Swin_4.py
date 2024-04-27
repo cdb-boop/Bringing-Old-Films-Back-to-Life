@@ -3,9 +3,9 @@ import torch.nn.functional as F
 from torch import nn 
 
 # from einops import rearrange
-from VP_code.models.raft_flow import Get_RAFT
-from VP_code.models.arch_util import ResidualBlockNoBN, flow_warp, make_layer 
-from VP_code.models.Spatial_Restoration_2 import Swin_Spatial_2
+from models.raft_flow import Get_RAFT
+from models.arch_util import ResidualBlockNoBN, flow_warp, make_layer 
+from models.Spatial_Restoration_2 import Swin_Spatial_2
 
 class Gated_Aggregation(nn.Module):
 

@@ -3,10 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from VP_code.models.RAFT_core.update import BasicUpdateBlock, SmallUpdateBlock
-from VP_code.models.RAFT_core.extractor import BasicEncoder, SmallEncoder
-from VP_code.models.RAFT_core.corr import CorrBlock, AlternateCorrBlock
-from VP_code.models.RAFT_core.utils.utils import bilinear_sampler, coords_grid, upflow8
+from models.RAFT_core.update import BasicUpdateBlock, SmallUpdateBlock
+from models.RAFT_core.extractor import BasicEncoder, SmallEncoder
+from models.RAFT_core.corr import CorrBlock, AlternateCorrBlock
+from models.RAFT_core.utils.utils import bilinear_sampler, coords_grid, upflow8
 
 try:
     autocast = torch.cuda.amp.autocast

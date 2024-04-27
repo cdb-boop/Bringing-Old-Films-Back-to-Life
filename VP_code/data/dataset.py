@@ -1,18 +1,20 @@
-import random
-import torch
-from torch.utils import data as data
 import os
+import random
+import operator
+
 import numpy as np
 import cv2
-import operator
 from PIL import Image
 from skimage.color import rgb2lab
 
+import torch
+from torch.utils import data as data
 import torchvision.transforms as transforms
-from VP_code.utils.util import get_root_logger
-from VP_code.utils.data_util import img2tensor, paired_random_crop, augment
-from VP_code.data.Data_Degradation.util import degradation_video_list, degradation_video_list_2, degradation_video_list_3, degradation_video_list_4, degradation_video_list_simple_debug, degradation_video_colorization, transfer_1, transfer_2, degradation_video_colorization_v2, degradation_video_colorization_v3, degradation_video_colorization_v4
-from VP_code.utils.LAB_util import to_mytensor, Normalize_LAB
+
+from utils.util import get_root_logger
+from utils.data_util import img2tensor, paired_random_crop, augment
+from data.Data_Degradation.util import degradation_video_list, degradation_video_list_2, degradation_video_list_3, degradation_video_list_4, degradation_video_list_simple_debug, degradation_video_colorization, transfer_1, transfer_2, degradation_video_colorization_v2, degradation_video_colorization_v3, degradation_video_colorization_v4
+from utils.LAB_util import to_mytensor, Normalize_LAB
 
 def getfilelist(file_path):
     all_file = []

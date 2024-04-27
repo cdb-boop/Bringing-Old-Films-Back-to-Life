@@ -2,9 +2,8 @@ import argparse
 import torch
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(sys.path[0])))
-from VP_code.models.arch_util import flow_warp
-from VP_code.models.RAFT_core.raft import RAFT
+from models.arch_util import flow_warp
+from models.RAFT_core.raft import RAFT
 
 import math
 from collections import OrderedDict

@@ -1,6 +1,4 @@
 ### Now try to simulate the degradation of real-world old film
-# import sys
-# sys.path.append('/home/wanziyu/workspace/project/Video_Restoration/')
 
 from .blend_modes import *
 import cv2
@@ -19,7 +17,7 @@ import scipy.stats as ss
 from scipy.interpolate import interp2d
 from scipy.linalg import orth
 from .texture_augmentation import texture_generator, moving_line_texture_generator
-# from VP_code.utils.data_util import img2tensor, paired_random_crop, augment
+# from utils.data_util import img2tensor, paired_random_crop, augment
 
 # def texture_augmentation(texture_image, target_h, target_w):
 

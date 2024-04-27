@@ -5,8 +5,7 @@ from torch import nn as nn
 from torch.nn import functional as F
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(sys.path[0])))
-from VP_code.models.arch_util import flow_warp
+from models.arch_util import flow_warp
 
 import cv2
 import os

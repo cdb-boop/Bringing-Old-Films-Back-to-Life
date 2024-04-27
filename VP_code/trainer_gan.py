@@ -1,35 +1,23 @@
-import sys
 import os
 import cv2
 import time
-import math
-import glob
-import shutil
 import importlib
 import datetime
-import numpy as np
-from PIL import Image
-from math import log10
 from collections import OrderedDict
-from functools import partial
-
-sys.path.append(os.path.dirname(sys.path[0]))
 
 import torch
-
-from VP_code.data.dataset import Film_dataset_1, Film_dataset_2, Film_dataset_3, Film_dataset_4
-from VP_code.utils.util import worker_set_seed, get_root_logger, set_device, seed_worker
-from VP_code.utils.data_util import tensor2img
-from VP_code.metrics.psnr_ssim import calculate_psnr,calculate_ssim
-from VP_code.models.loss import AdversarialLoss, VGGLoss_torch
-from VP_code.models.discriminator import Discriminator
-
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn import functional as F
 from torch.nn import DataParallel
 import torchvision.utils as vutils
+
+from data.dataset import Film_dataset_1, Film_dataset_2, Film_dataset_3, Film_dataset_4
+from utils.util import set_device, seed_worker
+from utils.data_util import tensor2img
+from metrics.psnr_ssim import calculate_psnr,calculate_ssim
+from models.loss import AdversarialLoss, VGGLoss_torch
 
 def charbonnier_loss(pred, target, eps=1e-12):
     return torch.sqrt((pred - target)**2 + eps).mean()
@@ -48,7 +36,6 @@ def _get_grad_norm(model):
 
 class Trainer():
     def __init__(self, config, opts, this_logger, debug=False):
-
         self.config = config
         self.opts = opts
         self.epoch = self.opts.epoch
@@ -68,7 +55,6 @@ class Trainer():
             self.train_dataset=Film_dataset_4(config['datasets']['train'])
 
         self.val_dataset=Film_dataset_1(config['datasets']['val'])           
-
 
         #worker_init_fn = partial(worker_set_seed, base=config['seed'], num_workers=config['datasets']['train']['num_worker_per_gpu'], rank=self.opts.global_rank)
 
@@ -103,16 +89,16 @@ class Trainer():
         ####
 
         ####
-        net = importlib.import_module('VP_code.models.' + opts.model_name)
+        net = importlib.import_module('models.' + opts.model_name)
         self.netG = set_device(net.Video_Backbone(spynet_path=opts.flow_path))
         self.print_network(self.netG, self.opts.model_name)
         #### TODO: use Discriminator [√]
-        d_net = importlib.import_module('VP_code.models.' + opts.discriminator_name)
+        d_net = importlib.import_module('models.' + opts.discriminator_name)
         self.netD = set_device(d_net.Discriminator(in_channels=3, use_sigmoid=self.opts.which_gan != 'hinge'))
         self.print_network(self.netD, "Discriminator")
 
         self.setup_optimizers()
-        
+
         if config['distributed']:
             ### TODO: modify to local rank [√]
             # self.netG = DDP(self.netG, device_ids=[opts.global_rank], output_device=opts.global_rank, broadcast_buffers=True) 
@@ -120,17 +106,15 @@ class Trainer():
             self.netD = DDP(self.netD, device_ids=[opts.local_rank])
 
     def print_network(self, net, model_name):
-
         if isinstance(net, (DataParallel, DDP)):
             net = net.module
-        
+
         net_str = str(net)
         net_params = sum(map(lambda x: x.numel(), net.parameters()))
 
         self.logger.info(
             f'Network: {model_name}, with parameters: {net_params:,d}')
         self.logger.info(net_str)
-
 
     def update_learning_rate(self): ## TODO: separatly modify the learning rate (flow and generator)
         lrd = self.config['trainer']['lr'] / self.config['trainer']['nepoch_decay']
@@ -150,7 +134,7 @@ class Trainer():
 
         for param_group in self.optimizer_D.param_groups:
             param_group['lr'] = gan_lr
-        
+
         self.logger.info('update G learning rate: %f -> %f' % (self.old_lr, lr))
         self.logger.info('update D learning rate: %f -> %f' % (self.old_gan_lr, gan_lr))
         if flow_update:
@@ -160,8 +144,6 @@ class Trainer():
         self.old_gan_lr = gan_lr
 
     def optimize_parameters(self, lq, gt, current_iter):
-
-
         if self.opts.fix_iter>0:
             if current_iter == 1:
                 for k, v in self.netG.named_parameters():
@@ -199,7 +181,7 @@ class Trainer():
         # else:
         # torch.nn.utils.clip_grad_norm_(self.netD.parameters(), 1.0)
         self.optimizer_D.step()
- 
+
         ## Calculate the adversarial loss of Generator
         gen_vid_feat = self.netD(predicted)
         gan_loss = self.adversarial_loss(gen_vid_feat, True, False) * self.config['trainer']['G_adv_loss_weight']
@@ -231,17 +213,14 @@ class Trainer():
         self.optimizer_G.step()
 
         if self.opts.global_rank==0 and current_iter % self.config['train_visualization_iter'] == 0:  # Save the training samples
-
             saved_results = torch.cat((gt[0], lq[0], predicted[0]),0)
             if self.config['datasets']['train']['normalizing']:
                 saved_results=(saved_results + 1.)/2.
             vutils.save_image(saved_results.data.cpu(),os.path.join(self.config['path']['experiments_root'],'training_show_%s.png'%(current_iter)),nrow=self.config['datasets']['train']['num_frame'], padding=0, normalize=False)
 
-
         self.log_dict = self.reduce_loss_dict(loss_dict) ## Gather the loss from other GPUs
 
     def setup_optimizers(self):
-
         if self.config['trainer']['flow_lr_mul']==0.0: ## Don't use flow
             optim_params = self.netG.parameters()
         else:
@@ -266,7 +245,6 @@ class Trainer():
         self.optimizer_G = torch.optim.Adam(optim_params, lr=self.config['trainer']['lr'], betas=(self.config['trainer']['beta1'], self.config['trainer']['beta2']))
         self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=self.config['trainer']['gan_lr'], betas=(self.config['trainer']['beta1'], self.config['trainer']['beta2']))
 
-    
     def reduce_loss_dict(self, loss_dict):
         """reduce loss dict.
         In distributed training, it averages the losses among different GPUs .
@@ -293,7 +271,6 @@ class Trainer():
             return log_dict
 
     def print_iter_message(self, log_vars):
-
         message = (f"[{self.opts.name[:5]}..][epoch:{log_vars['epoch']:3d}, "f"iter:{log_vars['iter']:8,d}, lr:(")
         for v in log_vars['lrs']:
             message += f'{v:.3e},'
@@ -312,16 +289,14 @@ class Trainer():
 
         self.logger.info(message)
 
-            # tensorboard logger
-            # if self.use_tb_logger and 'debug' not in self.exp_name:
-            #     if k.startswith('l_'):
-            #         self.tb_logger.add_scalar(f'losses/{k}', v, current_iter)
-            #     else:
-            #         self.tb_logger.add_scalar(k, v, current_iter)
-
+        # tensorboard logger
+        # if self.use_tb_logger and 'debug' not in self.exp_name:
+        #     if k.startswith('l_'):
+        #         self.tb_logger.add_scalar(f'losses/{k}', v, current_iter)
+        #     else:
+        #         self.tb_logger.add_scalar(k, v, current_iter)
 
     def save_model(self, epoch, it):
-
         net_G_path = os.path.join(self.config['path']['models'], 'net_G_{}.pth'.format(str(it).zfill(5)))
         net_D_path = os.path.join(self.config['path']['models'], 'net_D_{}.pth'.format(str(it).zfill(5)))
         # dis_path = os.path.join(self.config['path']['models'], 'net_D_{}.pth'.format(str(it).zfill(5)))
@@ -341,10 +316,8 @@ class Trainer():
                     'iteration': it,
                     'optimG': self.optimizer_G.state_dict(),
                     'optimD': self.optimizer_D.state_dict()}, optimizer_path) ## TODO: Save the schedulers
-        
 
     def validation(self):
-
         if "metrics" in self.config['val']:
             calculate_metric = True
             self.PSNR=0.0
@@ -352,14 +325,13 @@ class Trainer():
         else:
             calculate_metric = False
 
-
         for val_data in self.val_loader:  ### Once load all frames
 
             val_frame_num = self.config['val']['val_frame_num']
             all_len = val_data['lq'].shape[1]
             all_output = []
 
-            clip_name,frame_name = val_data['key'][0].split('/')
+            clip_name, frame_name = val_data['key'][0].split('/')
 
             ############# TODO: other different inference strategies
             for i in range(0,all_len,val_frame_num):  ### Fetch parts of the input video
@@ -374,7 +346,7 @@ class Trainer():
                 with torch.no_grad():
                     self.part_output = self.netG(self.part_lq)
                 self.netG.train()
-                
+
                 if self.opts.fix_iter == float("inf"):  ## Eval mode for the flow estimation, even though for training
                     self.netG.module.spynet.eval()
 
@@ -382,7 +354,6 @@ class Trainer():
                 del self.part_lq
                 del self.part_output
             #############
-
 
             self.val_output = torch.cat(all_output, dim=0)
             self.gt = val_data['gt'].squeeze(0)
@@ -398,7 +369,7 @@ class Trainer():
             for j in range(len(self.val_output)):
                 gt_imgs.append(tensor2img(self.gt[j]))
                 sr_imgs.append(tensor2img(self.val_output[j]))
-            
+
             ### Save the image
             for id, sr_img in zip(val_data['frame_list'],sr_imgs):
                 save_place = os.path.join(self.config['path']['visualization'],self.config['datasets']['val']['name'],clip_name,str(id.item()).zfill(8)+'.png')
@@ -406,15 +377,12 @@ class Trainer():
                 os.makedirs(dir_name, exist_ok=True)
                 cv2.imwrite(save_place,sr_img)
 
-
             if calculate_metric:
                 PSNR_this_video = [calculate_psnr(sr,gt) for sr,gt in zip(sr_imgs,gt_imgs)]
                 SSIM_this_video = [calculate_ssim(sr,gt) for sr,gt in zip(sr_imgs,gt_imgs)]
                 self.PSNR += sum(PSNR_this_video) / len(PSNR_this_video)
                 self.SSIM += sum(SSIM_this_video) / len(SSIM_this_video)
 
-
-        
         if calculate_metric:
             self.PSNR /= len(self.val_loader)
             self.SSIM /= len(self.val_loader)
@@ -425,15 +393,12 @@ class Trainer():
 
             self.logger.info(log_str)
 
-
     def train(self):
-        
         self.logger.info(f'Start training from epoch: {0}, iter: {0}')
         data_time, iter_time = time.time(), time.time()
         start_time = time.time()
 
         for epoch in range(self.epoch):
-
             ## Reset the status
             self.train_sampler.set_epoch(epoch)
             # previous_seed = np.random.get_state()[1][0]
@@ -459,14 +424,11 @@ class Trainer():
                     self.logger.info('Saving models and training states.')
                     self.save_model(epoch, self.iteration)
 
-
                 if self.iteration % self.config['val']['val_freq']==0 and self.opts.global_rank==0:
                     self.validation()
 
                 data_time = time.time()
                 iter_time = time.time()
 
-
             if epoch > self.config['trainer']['nepoch_steady']:
                 self.update_learning_rate()
-

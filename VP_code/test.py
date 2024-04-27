@@ -1,22 +1,19 @@
-import sys
 import os
 import cv2
 import importlib
 import argparse
 import yaml
 
-sys.path.append(os.path.dirname(sys.path[0]))
-
 import torch
 from torch.utils.data import DataLoader
 
-from VP_code.data.dataset import Film_dataset_1
-from VP_code.utils.util import frame_to_video
-from VP_code.utils.data_util import tensor2img
-from VP_code.metrics.psnr_ssim import calculate_psnr, calculate_ssim
+from data.dataset import Film_dataset_1
+from utils.util import frame_to_video
+from utils.data_util import tensor2img
+from metrics.psnr_ssim import calculate_psnr, calculate_ssim
 
 def load_model(model_name: str, name: str, which_iter: str, debug=False):
-    net = importlib.import_module('VP_code.models.' + model_name)
+    net = importlib.import_module('models.' + model_name)
     netG = net.Video_Backbone()
     model_path = os.path.join('OUTPUT', name,'models','net_G_{}.pth'.format(str(which_iter).zfill(5)))
     checkpoint = torch.load(model_path)

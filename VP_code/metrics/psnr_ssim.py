@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from VP_code.metrics.metric_util import reorder_image
+from metrics.metric_util import reorder_image
 
 
 def calculate_psnr(img1,

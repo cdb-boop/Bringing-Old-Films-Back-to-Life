@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-from VP_code.models.swin_util import Mlp, window_partition, window_reverse, WindowAttention, SwinTransformerBlock, BasicLayer, RSTB, PatchEmbed, PatchUnEmbed
+from models.swin_util import Mlp, window_partition, window_reverse, WindowAttention, SwinTransformerBlock, BasicLayer, RSTB, PatchEmbed, PatchUnEmbed
 
 
 
