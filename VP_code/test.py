@@ -100,13 +100,13 @@ def validation(opts, config_dict, loaded_model, val_loader):
 
             with torch.no_grad():
                 part_output = loaded_model(part_lq)
-            
+
             if i == 0:
                 all_output.append(part_output.detach().cpu().squeeze(0))
             else:
                 restored_temporal_length = min(i+val_frame_num,all_len)-i-(val_frame_num-opts.temporal_stride)
                 all_output.append(part_output[:,0-restored_temporal_length:,:,:,:].detach().cpu().squeeze(0))
-            
+
             del part_lq
 
             if (i+val_frame_num)>=all_len:
@@ -127,7 +127,7 @@ def validation(opts, config_dict, loaded_model, val_loader):
         for j in range(len(val_output)):
             gt_imgs.append(tensor2img(gt[j]))
             sr_imgs.append(tensor2img(val_output[j]))
-        
+
         ### Save the image
         restored_clip_url = os.path.join(opts.save_place, opts.name,'test_results_'+str(opts.temporal_length)+"_"+str(opts.which_iter), test_clip_par_folder, clip_name)
         restored_clip_url = os.path.abspath(restored_clip_url)
@@ -148,8 +148,6 @@ def validation(opts, config_dict, loaded_model, val_loader):
             PSNR += sum(PSNR_this_video) / len(PSNR_this_video)
             SSIM += sum(SSIM_this_video) / len(SSIM_this_video)
 
-
-    
     if calculate_metric:
         PSNR /= len(val_loader)
         SSIM /= len(val_loader)
@@ -166,7 +164,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--name',type=str,default='',help='The name of this experiment')
     parser.add_argument('--model_name',type=str,default='',help='The name of adopted model')
-    parser.add_argument('--which_iter',type=str,default='latest',help='Load which iteraiton')
+    parser.add_argument('--which_iter',type=str,default='latest',help='Load which iteration')
     parser.add_argument('--input_video_url',type=str,default='',help='degraded video input')
     parser.add_argument('--gt_video_url',type=str,default='',help='gt video')
     parser.add_argument('--temporal_length',type=int,default=15,help='How many frames should be processed in one forward')
