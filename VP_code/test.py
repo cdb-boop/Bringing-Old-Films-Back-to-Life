@@ -78,7 +78,9 @@ def validation(opts, config_dict, loaded_model, val_loader):
         all_len = val_data['lq'].shape[1]
         all_output = []
 
-        clip_name,frame_name = val_data['key'][0].split('/')
+        clip_dir_path, frame_name = os.path.split(val_data['key'][0])
+        frame_name = os.path.splitext(frame_name)[0]
+        clip_name = os.path.basename(clip_dir_path)
         test_clip_par_folder = val_data['video_name'][0]  ## The video name
 
         frame_name_list = val_data['name_list']
@@ -127,21 +129,17 @@ def validation(opts, config_dict, loaded_model, val_loader):
             sr_imgs.append(tensor2img(val_output[j]))
         
         ### Save the image
+        restored_clip_url = os.path.join(opts.save_place, opts.name,'test_results_'+str(opts.temporal_length)+"_"+str(opts.which_iter), test_clip_par_folder, clip_name)
+        restored_clip_url = os.path.abspath(restored_clip_url)
         for id, sr_img in enumerate(sr_imgs):
-            save_place = os.path.join(opts.save_place,opts.name,'test_results_'+str(opts.temporal_length)+"_"+str(opts.which_iter), test_clip_par_folder, clip_name, frame_name_list[id][0])
+            save_place = os.path.join(restored_clip_url, frame_name_list[id][0])
             dir_name = os.path.abspath(os.path.dirname(save_place))
             os.makedirs(dir_name, exist_ok=True)
             cv2.imwrite(save_place,sr_img)
 
         ### To Video directly TODO: currently only support 1-depth sub-folder test clip [√]
-        if test_clip_par_folder==os.path.basename(opts.input_video_url):
-            input_clip_url = os.path.join(opts.input_video_url, clip_name)
-        else:
-            input_clip_url = os.path.join(opts.input_video_url, test_clip_par_folder, clip_name)
-        
-        restored_clip_url = os.path.join(opts.save_place, opts.name, 'test_results_'+str(opts.temporal_length)+"_"+str(opts.which_iter), test_clip_par_folder, clip_name)
-        video_save_url = os.path.join(opts.save_place, opts.name, 'test_results_'+str(opts.temporal_length)+"_"+str(opts.which_iter), test_clip_par_folder, clip_name+'.avi')
-        frame_to_video(input_clip_url, restored_clip_url, video_save_url)
+        video_save_url = restored_clip_url + '.avi'
+        frame_to_video(opts.input_video_url, restored_clip_url, video_save_url)
         ### 
 
         if calculate_metric:
@@ -173,7 +171,7 @@ if __name__ == '__main__':
     parser.add_argument('--gt_video_url',type=str,default='',help='gt video')
     parser.add_argument('--temporal_length',type=int,default=15,help='How many frames should be processed in one forward')
     parser.add_argument('--temporal_stride',type=int,default=3,help='Stride value while sliding window')
-    parser.add_argument('--save_place',type=str,default='OUTPUT',help='save place')
+    parser.add_argument('--save_place',type=str,default='./OUTPUT',help='output directory')
 
     opts = parser.parse_args()
 
