@@ -2,6 +2,8 @@
 
 WIP
 
+TBD if works well in ComfyUI.
+
 ## Citation
 
 ```bibtex

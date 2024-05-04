@@ -1,8 +1,10 @@
 import cv2
 import numpy as np
 
-from metrics.metric_util import reorder_image
-
+try:
+    from ..metrics.metric_util import reorder_image
+except:
+    from metrics.metric_util import reorder_image
 
 def calculate_psnr(img1,
                    img2,

@@ -89,11 +89,17 @@ class Trainer():
         ####
 
         ####
-        net = importlib.import_module('models.' + opts.model_name)
+        try:
+            net = importlib.import_module('..models.' + opts.model_name)
+        except:
+            net = importlib.import_module('models.' + opts.model_name)
         self.netG = set_device(net.Video_Backbone(spynet_path=opts.flow_path))
         self.print_network(self.netG, self.opts.model_name)
         #### TODO: use Discriminator [√]
-        d_net = importlib.import_module('models.' + opts.discriminator_name)
+        try:
+            d_net = importlib.import_module('..models.' + opts.discriminator_name)
+        except:
+            d_net = importlib.import_module('models.' + opts.discriminator_name)
         self.netD = set_device(d_net.Discriminator(in_channels=3, use_sigmoid=self.opts.which_gan != 'hinge'))
         self.print_network(self.netD, "Discriminator")
 

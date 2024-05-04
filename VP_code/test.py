@@ -7,15 +7,28 @@ import yaml
 import torch
 from torch.utils.data import DataLoader
 
-from data.dataset import Film_dataset_1
-from utils.util import frame_to_video
-from utils.data_util import tensor2img
-from metrics.psnr_ssim import calculate_psnr, calculate_ssim
+try:
+    MODULE_NAME = "Bringing-Old-Films-Back-to-Life.VP_code.models." # TODO: remove hardcoded value
+    PACKAGE = __name__
+    from .data.dataset import Film_dataset_1, TestDataset
+    from .utils.util import frame_to_video
+    from .utils.data_util import tensor2img
+    from .metrics.psnr_ssim import calculate_psnr, calculate_ssim
+except:
+    MODULE_NAME = "models."
+    PACKAGE = ""
+    from data.dataset import Film_dataset_1, TestDataset
+    from utils.util import frame_to_video
+    from utils.data_util import tensor2img
+    from metrics.psnr_ssim import calculate_psnr, calculate_ssim
 
-def load_model(model_name: str, name: str, which_iter: str, debug=False):
-    net = importlib.import_module('models.' + model_name)
+def load_model(model_name: str, model_path: str, debug=False):
+    print("MODULE_NAME :" + MODULE_NAME)
+    print("PACKAGE: " + PACKAGE)
+    print("model_name: " + model_name)
+    print("HHH: " + MODULE_NAME + model_name)
+    net = importlib.import_module(MODULE_NAME + model_name, PACKAGE)
     netG = net.Video_Backbone()
-    model_path = os.path.join('OUTPUT', name,'models','net_G_{}.pth'.format(str(which_iter).zfill(5)))
     checkpoint = torch.load(model_path)
     netG.load_state_dict(checkpoint['netG'])
     netG.cuda()
@@ -23,8 +36,8 @@ def load_model(model_name: str, name: str, which_iter: str, debug=False):
         print("Finish loading model ...")
     return netG
 
-def load_dataset(datasets_val, batch_size=1, debug=False):
-    dataset = Film_dataset_1(datasets_val)
+def load_dataset_test(dataset_val, batch_size=1, debug=False):
+    dataset = Film_dataset_1(dataset_val)
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False, sampler=None)
     if debug:
         print("Finish loading dataset ...")
@@ -32,7 +45,7 @@ def load_dataset(datasets_val, batch_size=1, debug=False):
         print(f'\n\tNumber of test videos: {len(dataset)}')
     return data_loader
 
-def restore(model, frame_batch, temporal_length: int, temporal_stride: int, normalizing: bool):
+def restore_test(model, frame_batch, temporal_length: int, temporal_stride: int, normalizing: bool):
     all_len = frame_batch['lq'].shape[1]
     all_output = []
 
@@ -80,10 +93,86 @@ def restore(model, frame_batch, temporal_length: int, temporal_stride: int, norm
 
     return (gt_imgs, sr_imgs)
 
-def main(opts, config_dict):
-    model = load_model(opts.model_name, opts.name, opts.which_iter, debug=True)
+def restore(model, frame_batch_lq, temporal_length: int, temporal_stride: int, normalizing: bool):
+    all_len = frame_batch_lq.shape[1]
+    all_output = []
 
-    frame_loader: DataLoader = load_dataset(config_dict['datasets']['val'], debug=True)
+    part_output=None
+    for i in range(0, all_len, temporal_stride):
+        part_lq = frame_batch_lq[:,i:min(i+temporal_length,all_len),:,:,:].cuda()
+        # if part_output is not None:
+        #     part_lq[:,:temporal_length-temporal_stride,:,:,:] = part_output[:,temporal_stride-temporal_length:,:,:,:]
+
+        with torch.no_grad():
+            part_output = model(part_lq)
+
+        if i == 0:
+            all_output.append(part_output.detach().cpu().squeeze(0))
+        else:
+            restored_temporal_length = min(i+temporal_length, all_len) - i - (temporal_length - temporal_stride)
+            all_output.append(part_output[:,0-restored_temporal_length:,:,:,:].detach().cpu().squeeze(0))
+
+        del part_lq
+
+        if i + temporal_length >= all_len:
+            break
+    #############
+
+    val_output = torch.cat(all_output, dim=0)
+    lq = frame_batch_lq.squeeze(0)
+    if normalizing:
+        val_output = (val_output + 1) / 2
+        lq = (lq + 1) / 2
+    torch.cuda.empty_cache()
+
+    sr_imgs = []
+    for j in range(len(val_output)):
+        sr_imgs.append(tensor2img(val_output[j]))
+
+    return sr_imgs
+
+def load_dataset(dataset_val, batch_size=1, debug=False):
+    dataset = TestDataset(
+        dataroot_gt=dataset_val['dataroot_gt'],
+        dataroot_lq=dataset_val['dataroot_lq'],
+        num_frame=dataset_val['num_frame'],
+        interval_list=dataset_val['interval_list'],
+        scale=dataset_val['scale'],
+        normalize=dataset_val['normalizing'],
+        colorization=dataset_val['name']=='colorization',
+    )
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False, sampler=None)
+    if debug:
+        print("Finish loading dataset ...")
+        print("Test set statistics:")
+        print(f'\n\tNumber of test videos: {len(dataset)}')
+    return data_loader
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--name',type=str,default='',help='The name of this experiment')
+    parser.add_argument('--model_name',type=str,default='',help='The name of adopted model')
+    parser.add_argument('--which_iter',type=str,default='latest',help='Load which iteration')
+    parser.add_argument('--input_video_url',type=str,default='',help='degraded video input')
+    parser.add_argument('--gt_video_url',type=str,default='',help='gt video')
+    parser.add_argument('--temporal_length',type=int,default=15,help='How many frames should be processed in one forward')
+    parser.add_argument('--temporal_stride',type=int,default=3,help='Stride value while sliding window')
+    parser.add_argument('--save_place',type=str,default='./OUTPUT',help='output directory')
+    parser.add_argument('--normalizing',type=bool,default=True,help='output directory')
+
+    opts = parser.parse_args()
+
+    with open(os.path.join('./configs', opts.name + '.yaml'), 'r') as stream:
+        config_dict = yaml.safe_load(stream)
+    config_dict['datasets']['val']['dataroot_gt'] = opts.gt_video_url
+    config_dict['datasets']['val']['dataroot_lq'] = opts.input_video_url
+    config_dict['datasets']['val']['normalizing'] = opts.normalizing
+    config_dict['val']['val_frame_num'] = opts.temporal_length
+
+    model_path = os.path.join('OUTPUT', opts.name,'models','net_G_{}.pth'.format(str(opts.which_iter).zfill(5)))
+    model = load_model(opts.model_name, model_path, debug=True)
+
+    frame_loader: DataLoader = load_dataset_test(config_dict['datasets']['val'], debug=True)
     if len(frame_loader) == 0:
         raise Exception("No images found!")
 
@@ -96,7 +185,7 @@ def main(opts, config_dict):
     # test_clip_par_folder = config_dict['datasets']['val']['dataroot_lq'].split('/')[-1]
 
     for frame_batch in frame_loader:  ### Once load all frames
-        gt_imgs, sr_imgs = restore(model, frame_batch, opts.temporal_length, opts.temporal_stride, opts.normalizing)
+        gt_imgs, sr_imgs = restore_test(model, frame_batch, opts.temporal_length, opts.temporal_stride, opts.normalizing)
 
         ### Save the image
         clip_dir_path, frame_name = os.path.split(frame_batch['key'][0])
@@ -133,26 +222,3 @@ def main(opts, config_dict):
         log_str += f'\t # SSIM: {SSIM:.4f}\n'
 
         print(log_str)
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--name',type=str,default='',help='The name of this experiment')
-    parser.add_argument('--model_name',type=str,default='',help='The name of adopted model')
-    parser.add_argument('--which_iter',type=str,default='latest',help='Load which iteration')
-    parser.add_argument('--input_video_url',type=str,default='',help='degraded video input')
-    parser.add_argument('--gt_video_url',type=str,default='',help='gt video')
-    parser.add_argument('--temporal_length',type=int,default=15,help='How many frames should be processed in one forward')
-    parser.add_argument('--temporal_stride',type=int,default=3,help='Stride value while sliding window')
-    parser.add_argument('--save_place',type=str,default='./OUTPUT',help='output directory')
-    parser.add_argument('--normalizing',type=bool,default=True,help='output directory')
-
-    opts = parser.parse_args()
-
-    with open(os.path.join('./configs',opts.name+'.yaml'), 'r') as stream:
-        config_dict = yaml.safe_load(stream)
-    config_dict['datasets']['val']['dataroot_gt'] = opts.gt_video_url
-    config_dict['datasets']['val']['dataroot_lq'] = opts.input_video_url
-    config_dict['datasets']['val']['normalizing'] = opts.normalizing
-    config_dict['val']['val_frame_num'] = opts.temporal_length
-
-    main(opts, config_dict)

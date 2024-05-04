@@ -11,14 +11,20 @@ import torch
 from torch.utils import data as data
 import torchvision.transforms as transforms
 
-from utils.util import get_root_logger
-from utils.data_util import img2tensor, paired_random_crop, augment
-from data.Data_Degradation.util import degradation_video_list, degradation_video_list_2, degradation_video_list_3, degradation_video_list_4, degradation_video_list_simple_debug, degradation_video_colorization, transfer_1, transfer_2, degradation_video_colorization_v2, degradation_video_colorization_v3, degradation_video_colorization_v4
-from utils.LAB_util import to_mytensor, Normalize_LAB
+try:
+    from ..utils.util import get_root_logger
+    from ..utils.data_util import img2tensor, paired_random_crop, augment
+    from ..data.Data_Degradation.util import degradation_video_list, degradation_video_list_2, degradation_video_list_3, degradation_video_list_4, degradation_video_list_simple_debug, degradation_video_colorization, transfer_1, transfer_2, degradation_video_colorization_v2, degradation_video_colorization_v3, degradation_video_colorization_v4
+    from ..utils.LAB_util import to_mytensor, Normalize_LAB
+except:
+    from utils.util import get_root_logger
+    from utils.data_util import img2tensor, paired_random_crop, augment
+    from data.Data_Degradation.util import degradation_video_list, degradation_video_list_2, degradation_video_list_3, degradation_video_list_4, degradation_video_list_simple_debug, degradation_video_colorization, transfer_1, transfer_2, degradation_video_colorization_v2, degradation_video_colorization_v3, degradation_video_colorization_v4
+    from utils.LAB_util import to_mytensor, Normalize_LAB
 
 def getfilelist(file_path):
     all_file = []
-    for dir,folder,file in os.walk(file_path):
+    for dir, folder, file in os.walk(file_path):
         for i in file:
             t = "%s/%s"%(dir,i)
             all_file.append(t)
@@ -27,58 +33,47 @@ def getfilelist(file_path):
 
 def getfilelist_with_length(file_path):
     all_file = []
-    for dir,folder,file in os.walk(file_path):
+    for dir, folder, file in os.walk(file_path):
         for i in file:
-            t = "%s/%s"%(dir,i)
-            all_file.append((t,len(os.listdir(dir))))
+            t = os.path.join(dir, i)
+            all_file.append((t, len(os.listdir(dir))))
 
     all_file.sort(key = operator.itemgetter(0))
     return all_file
 
-def getfolderlist(file_path):
-
+def get_folder_list(file_path):
     all_folder = []
-    for dir,folder,file in os.walk(file_path):
+    for dir, folder, file in os.walk(file_path):
         if len(file)==0:
             continue
         rerank = sorted(file)
-        t = "%s/%s"%(dir,rerank[0])
+        t = os.path.join(dir, rerank[0])
         if t.endswith('.avi'):
             continue
-        all_folder.append((t,len(file)))
-    
+        all_folder.append((t, len(file)))
+
     all_folder.sort(key = operator.itemgetter(0))
     # all_folder = sorted(all_folder)
     return all_folder
 
-
 def convert_to_L(img):
-
     frame_pil = transfer_1(img)
     frame_cv2 = transfer_2(frame_pil.convert("RGB"))
-
     return frame_cv2
-
 
 def resize_256_short_side(img):
     width, height = img.size
-
     if width<height:
         new_height =  int (256 * height / width)
         new_width = 256
     else:
         new_width =  int (256 * width / height)
         new_height = 256
-    
     return img.resize((new_width,new_height),resample=Image.BILINEAR)
 
-
 def resize_368_short_side(img):
-    
     frame_pil = transfer_1(img)
-
     width, height = frame_pil.size
-
     if width<height:
         new_height =  int (368 * height / width)
         new_height = new_height // 16 * 16
@@ -91,7 +86,7 @@ def resize_368_short_side(img):
     frame_pil = frame_pil.resize((new_width,new_height),resample=Image.BILINEAR)
     return transfer_2(frame_pil.convert("RGB"))
 
-# def getfolderlist_with_length(file_path):
+# def get_folder_list_with_length(file_path):
 #     all_folder = []
 #     for dir,folder,file in os.walk(file_path):
 #         for i in folder:
@@ -101,8 +96,100 @@ def resize_368_short_side(img):
 #     return all_folder
 
 
-class Film_dataset_1(data.Dataset): ## 1 for REDS dataset
+class TestDataset(data.Dataset): ## 1 for REDS dataset
+    def __init__(self, dataroot_gt, dataroot_lq, num_frame, interval_list, scale, normalize:bool, colorization:bool):
+        super(TestDataset, self).__init__()
+        self.normalize = normalize
+        self.colorization = colorization
 
+        self.scale = scale
+        self.gt_root = dataroot_gt
+        self.lq_root = dataroot_lq
+
+        ## TODO: dynamic frame num for different video clips
+        self.num_frame = num_frame
+        self.num_half_frames = num_frame // 2
+
+        ## Now: Append the first frame name, then load all frames based on the clip length
+        self.lq_frames = get_folder_list(self.lq_root)
+        self.gt_frames = get_folder_list(self.gt_root)
+        # self.lq_frames = []
+        # self.gt_frames = []
+        # for i in range(len(self.lq_folders))
+        #     val_frame_list_this = sorted(os.listdir(self.lq_folders[i]))
+        #     first_frame_name = val_frame_list_this[0]
+        #     clip_length = len(val_frame_list_this)
+        #     self.lq_frames.append((os.path.join(self.lq_folders[i],f'{first_frame_name:08d}.png'),clip_length))
+        #     self.gt_frames.append((os.path.join(self.gt_folders[i],f'{first_frame_name:08d}.png'),clip_length))
+
+        # temporal augmentation configs
+        self.interval_list = interval_list
+
+    def __getitem__(self, index):
+        key = self.gt_frames[index][0]
+        frame_len = self.gt_frames[index][1]
+
+        ## Fetch the parent directory of clip name
+        gt_directory_path = os.path.dirname(os.path.dirname(self.gt_frames[index][0]))
+        lq_directory_path = os.path.dirname(os.path.dirname(self.lq_frames[index][0]))
+
+        clip_name, frame_name = key.split(os.path.sep)[-2:]  # key example: 000/00000000
+        key = os.path.join(clip_name, frame_name)
+        center_frame_idx = int(frame_name[:-4])
+
+        new_clip_sequence = sorted(os.listdir(os.path.join(gt_directory_path, clip_name)))
+        frame_ids = list(range(center_frame_idx, center_frame_idx + frame_len))
+
+        # Sample number should equal to the all frames number in on folder
+        assert len(frame_ids) == frame_len, (f'Wrong length of frame list: {len(frame_ids)}')
+
+        # get the GT frame (as the center frame)
+        img_gts = []
+        img_lqs = []
+        for i, frame_id in enumerate(frame_ids):
+            # img_gt_path = os.path.join(gt_directory_path, clip_name, f'{frame:05d}.png')
+            img_gt_path = os.path.join(gt_directory_path, clip_name, new_clip_sequence[i])
+            img_gt = cv2.imread(img_gt_path)
+            img_gt = img_gt.astype(np.float32) / 255.
+            img_gts.append(img_gt)
+
+            img_lq_path = os.path.join(lq_directory_path, clip_name, new_clip_sequence[i])
+            img_lq = cv2.imread(img_lq_path)
+            img_lq = img_lq.astype(np.float32) / 255.
+            img_lqs.append(img_lq)
+
+        for i in range(len(img_gts)):
+            # img_gts[i] = cv2.resize(img_gts[i], (gt_size_w, gt_size_h), interpolation = cv2.INTER_AREA)
+            # img_lqs[i] = cv2.resize(img_lqs[i], (gt_size_w, gt_size_h), interpolation = cv2.INTER_AREA)
+            img_gts[i] = resize_368_short_side(img_gts[i])
+            img_lqs[i] = resize_368_short_side(img_lqs[i])
+            if self.colorization:
+                img_gts[i] = convert_to_L(img_gts[i])
+                img_lqs[i] = convert_to_L(img_lqs[i])
+
+        # augmentation - flip, rotate
+        img_lqs.extend(img_gts)
+
+        img_results = img2tensor(img_lqs) ## List of tensor
+
+        if self.normalize:
+            transform_normalize=transforms.Normalize((0.5, 0.5, 0.5),(0.5, 0.5, 0.5))
+            for i in range(len(img_results)):
+                img_results[i]=transform_normalize(img_results[i])
+
+        img_lqs = torch.stack(img_results[:frame_len], dim=0)
+        img_gts = torch.stack(img_results[frame_len:], dim=0)
+
+        # img_lqs: (t, c, h, w)
+        # img_gt: (t, c, h, w)
+        # key: str
+        return {'lq': img_lqs, 'gt': img_gts, 'key': key, 'frame_list': frame_ids, 'video_name': os.path.basename(lq_directory_path), 'name_list': new_clip_sequence}
+
+    def __len__(self):
+        return len(self.lq_frames)
+
+
+class Film_dataset_1(data.Dataset): ## 1 for REDS dataset
     def __init__(self, data_config):
         super(Film_dataset_1, self).__init__()
         
@@ -117,14 +204,12 @@ class Film_dataset_1(data.Dataset): ## 1 for REDS dataset
         self.num_half_frames = data_config['num_frame'] // 2
 
         if self.is_train:
-
             self.lq_frames = getfilelist_with_length(self.lq_root)
             self.gt_frames = getfilelist_with_length(self.gt_root)
-        
         else:
             ## Now: Append the first frame name, then load all frames based on the clip length
-            self.lq_frames = getfolderlist(self.lq_root)
-            self.gt_frames = getfolderlist(self.gt_root)
+            self.lq_frames = get_folder_list(self.lq_root)
+            self.gt_frames = get_folder_list(self.gt_root)
             # self.lq_frames = []
             # self.gt_frames = []
             # for i in range(len(self.lq_folders))
@@ -143,7 +228,6 @@ class Film_dataset_1(data.Dataset): ## 1 for REDS dataset
                     f'Random reverse is {self.random_reverse}.')
 
     def __getitem__(self, index):
-
         gt_size = self.data_config.get('gt_size', None)
         gt_size_w = gt_size[0]
         gt_size_h = gt_size[1]
@@ -155,8 +239,8 @@ class Film_dataset_1(data.Dataset): ## 1 for REDS dataset
         current_gt_root = os.path.dirname(os.path.dirname(self.gt_frames[index][0]))
         current_lq_root = os.path.dirname(os.path.dirname(self.lq_frames[index][0]))
 
-        clip_name, frame_name = key.split('/')[-2:]  # key example: 000/00000000
-        key = clip_name + "/" + frame_name
+        clip_name, frame_name = key.split(os.path.sep)[-2:]  # key example: 000/00000000
+        key = clip_name + os.path.sep + frame_name
         center_frame_idx = int(frame_name[:-4])
 
         new_clip_sequence = sorted(os.listdir(os.path.join(current_gt_root, clip_name)))
@@ -180,7 +264,6 @@ class Film_dataset_1(data.Dataset): ## 1 for REDS dataset
             # Sample number should equal to the numer we set
             assert len(frame_list) == self.num_frame, (f'Wrong length of frame list: {len(frame_list)}')
         else:
-
             frame_list = list(range(center_frame_idx, center_frame_idx + current_len))
             # Sample number should equal to the all frames number in on folder
             assert len(frame_list) == current_len, (f'Wrong length of frame list: {len(frame_list)}')
@@ -265,8 +348,8 @@ class Film_dataset_2(data.Dataset): ## 2 for Vimeo dataset
         self.num_half_frames = data_config['num_frame'] // 2
 
 
-        self.lq_frames = getfolderlist(self.lq_root)
-        self.gt_frames = getfolderlist(self.gt_root)
+        self.lq_frames = get_folder_list(self.lq_root)
+        self.gt_frames = get_folder_list(self.gt_root)
 
         # temporal augmentation configs
         self.interval_list = data_config['interval_list']
@@ -355,6 +438,7 @@ class Film_dataset_2(data.Dataset): ## 2 for Vimeo dataset
     def __len__(self):
         return len(self.lq_frames)
 
+
 class Film_dataset_3(data.Dataset): ## 3 for Vimeo dataset + Colorization
 
     def __init__(self, data_config):
@@ -371,8 +455,8 @@ class Film_dataset_3(data.Dataset): ## 3 for Vimeo dataset + Colorization
         self.num_half_frames = data_config['num_frame'] // 2
 
 
-        self.lq_frames = getfolderlist(self.lq_root)
-        self.gt_frames = getfolderlist(self.gt_root)
+        self.lq_frames = get_folder_list(self.lq_root)
+        self.gt_frames = get_folder_list(self.gt_root)
 
         # temporal augmentation configs
         self.interval_list = data_config['interval_list']
@@ -484,8 +568,8 @@ class Film_dataset_4(data.Dataset): ## 4 for REDS dataset + resize by 2
         
         else:
             ## Now: Append the first frame name, then load all frames based on the clip length
-            self.lq_frames = getfolderlist(self.lq_root)
-            self.gt_frames = getfolderlist(self.gt_root)
+            self.lq_frames = get_folder_list(self.lq_root)
+            self.gt_frames = get_folder_list(self.gt_root)
             # self.lq_frames = []
             # self.gt_frames = []
             # for i in range(len(self.lq_folders))
@@ -620,8 +704,8 @@ class Film_dataset_5(data.Dataset): ## 3 for Vimeo dataset + Colorization + Conv
         self.num_half_frames = data_config['num_frame'] // 2
 
 
-        self.lq_frames = getfolderlist(self.lq_root)
-        self.gt_frames = getfolderlist(self.gt_root)
+        self.lq_frames = get_folder_list(self.lq_root)
+        self.gt_frames = get_folder_list(self.gt_root)
 
         # temporal augmentation configs
         self.interval_list = data_config['interval_list']
@@ -729,7 +813,6 @@ class Film_dataset_5(data.Dataset): ## 3 for Vimeo dataset + Colorization + Conv
         return len(self.lq_frames)
 
 
-
 class Film_dataset_6(data.Dataset): ## 6 for DAVIS&YoutubeVOS dataset + Colorization + Convert_to_LAB
 
     def __init__(self, data_config):
@@ -746,8 +829,8 @@ class Film_dataset_6(data.Dataset): ## 6 for DAVIS&YoutubeVOS dataset + Coloriza
         self.num_half_frames = data_config['num_frame'] // 2
 
 
-        self.lq_frames = getfolderlist(self.lq_root)
-        self.gt_frames = getfolderlist(self.gt_root)
+        self.lq_frames = get_folder_list(self.lq_root)
+        self.gt_frames = get_folder_list(self.gt_root)
 
         # temporal augmentation configs
         self.interval_list = data_config['interval_list']
@@ -866,6 +949,7 @@ class Film_dataset_6(data.Dataset): ## 6 for DAVIS&YoutubeVOS dataset + Coloriza
     def __len__(self):
         return len(self.lq_frames)
 
+
 class Film_dataset_7(data.Dataset): ## 7 for DAVIS&YoutubeVOS dataset + Colorization + Convert_to_LAB, add extra long-term references (the final element)
 
     def __init__(self, data_config):
@@ -882,8 +966,8 @@ class Film_dataset_7(data.Dataset): ## 7 for DAVIS&YoutubeVOS dataset + Coloriza
         self.num_half_frames = data_config['num_frame'] // 2
 
 
-        self.lq_frames = getfolderlist(self.lq_root)
-        self.gt_frames = getfolderlist(self.gt_root)
+        self.lq_frames = get_folder_list(self.lq_root)
+        self.gt_frames = get_folder_list(self.gt_root)
 
         # temporal augmentation configs
         self.interval_list = data_config['interval_list']
@@ -1008,7 +1092,6 @@ class Film_dataset_7(data.Dataset): ## 7 for DAVIS&YoutubeVOS dataset + Coloriza
         return len(self.lq_frames)
 
 
-
 class Film_dataset_8(data.Dataset): ## 7 for DAVIS&YoutubeVOS dataset + Colorization + Convert_to_LAB, add extra long-term references (the final element), degradation_video_colorization_v4
 
     def __init__(self, data_config):
@@ -1025,8 +1108,8 @@ class Film_dataset_8(data.Dataset): ## 7 for DAVIS&YoutubeVOS dataset + Coloriza
         self.num_half_frames = data_config['num_frame'] // 2
 
 
-        self.lq_frames = getfolderlist(self.lq_root)
-        self.gt_frames = getfolderlist(self.gt_root)
+        self.lq_frames = get_folder_list(self.lq_root)
+        self.gt_frames = get_folder_list(self.gt_root)
 
         # temporal augmentation configs
         self.interval_list = data_config['interval_list']
