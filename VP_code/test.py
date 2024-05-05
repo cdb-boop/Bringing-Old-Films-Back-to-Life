@@ -37,7 +37,16 @@ def load_model(model_name: str, model_path: str, debug=False):
     return netG
 
 def load_dataset_test(dataset_val, batch_size=1, debug=False):
-    dataset = Film_dataset_1(dataset_val)
+    dataset = TestDataset(
+        dataroot_gt=dataset_val['dataroot_gt'],
+        dataroot_lq=dataset_val['dataroot_lq'],
+        num_frame=dataset_val['num_frame'],
+        interval_list=dataset_val['interval_list'],
+        scale=dataset_val['scale'],
+        normalize=dataset_val['normalizing'],
+        colorization=dataset_val['name']=='colorization',
+        short_side_length=dataset_val['short_side_length'],
+    )
     data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False, sampler=None)
     if debug:
         print("Finish loading dataset ...")
@@ -132,16 +141,15 @@ def restore(model, frame_batch_lq, temporal_length: int, temporal_stride: int, n
     return sr_imgs
 
 def load_dataset(dataset_val, batch_size=1, debug=False):
-    dataset = TestDataset(
-        dataroot_gt=dataset_val['dataroot_gt'],
-        dataroot_lq=dataset_val['dataroot_lq'],
-        num_frame=dataset_val['num_frame'],
-        interval_list=dataset_val['interval_list'],
-        scale=dataset_val['scale'],
-        normalize=dataset_val['normalizing'],
-        colorization=dataset_val['name']=='colorization',
+    dataset = Film_dataset_1(dataset_val)
+    data_loader = DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=False, 
+        num_workers=0, 
+        pin_memory=False, 
+        sampler=None
     )
-    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=False, sampler=None)
     if debug:
         print("Finish loading dataset ...")
         print("Test set statistics:")
@@ -159,6 +167,7 @@ if __name__ == '__main__':
     parser.add_argument('--temporal_stride',type=int,default=3,help='Stride value while sliding window')
     parser.add_argument('--save_place',type=str,default='./OUTPUT',help='output directory')
     parser.add_argument('--normalizing',type=bool,default=True,help='output directory')
+    parser.add_argument('--short_side_length',type=int,default=384,help='scale video by short side length')
 
     opts = parser.parse_args()
 
@@ -167,6 +176,7 @@ if __name__ == '__main__':
     config_dict['datasets']['val']['dataroot_gt'] = opts.gt_video_url
     config_dict['datasets']['val']['dataroot_lq'] = opts.input_video_url
     config_dict['datasets']['val']['normalizing'] = opts.normalizing
+    config_dict['datasets']['val']['short_side_length'] = opts.short_side_length
     config_dict['val']['val_frame_num'] = opts.temporal_length
 
     model_path = os.path.join('OUTPUT', opts.name,'models','net_G_{}.pth'.format(str(opts.which_iter).zfill(5)))

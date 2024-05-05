@@ -61,29 +61,26 @@ def convert_to_L(img):
     frame_cv2 = transfer_2(frame_pil.convert("RGB"))
     return frame_cv2
 
-def resize_256_short_side(img):
+def resize_frame(img: Image, short_side_length: int, stretch_multiple = 16) -> Image:
     width, height = img.size
-    if width<height:
-        new_height =  int (256 * height / width)
-        new_width = 256
+    if width < height:
+        if short_side_length == 0:
+            short_side_length = width
+        new_height =  int(short_side_length * height / width)
+        new_width = short_side_length
     else:
-        new_width =  int (256 * width / height)
-        new_height = 256
-    return img.resize((new_width,new_height),resample=Image.BILINEAR)
+        if short_side_length == 0:
+            short_side_length = height
+        new_width =  int(short_side_length * width / height)
+        new_height = short_side_length
+    if stretch_multiple is not None:
+        new_width = new_width // stretch_multiple * stretch_multiple
+        new_height = new_height // stretch_multiple * stretch_multiple
+    return img.resize((new_width, new_height), resample=Image.BILINEAR)
 
-def resize_368_short_side(img):
+def resize_and_transfer_frame(img: Image, short_side_length: int, stretch_multiple = 16) -> Image:
     frame_pil = transfer_1(img)
-    width, height = frame_pil.size
-    if width<height:
-        new_height =  int (368 * height / width)
-        new_height = new_height // 16 * 16
-        new_width = 368
-    else:
-        new_width =  int (368 * width / height)
-        new_width = new_width // 16 * 16
-        new_height = 368
-    
-    frame_pil = frame_pil.resize((new_width,new_height),resample=Image.BILINEAR)
+    frame_pil = resize_frame(frame_pil, short_side_length, stretch_multiple)
     return transfer_2(frame_pil.convert("RGB"))
 
 # def get_folder_list_with_length(file_path):
@@ -97,12 +94,13 @@ def resize_368_short_side(img):
 
 
 class TestDataset(data.Dataset): ## 1 for REDS dataset
-    def __init__(self, dataroot_gt, dataroot_lq, num_frame, interval_list, scale, normalize:bool, colorization:bool):
+    def __init__(self, dataroot_gt, dataroot_lq, num_frame, interval_list, scale, normalize:bool, colorization:bool, short_side_length:int=None):
         super(TestDataset, self).__init__()
         self.normalize = normalize
         self.colorization = colorization
 
         self.scale = scale
+        self.short_side_length = 0 if short_side_length is None else short_side_length
         self.gt_root = dataroot_gt
         self.lq_root = dataroot_lq
 
@@ -128,6 +126,7 @@ class TestDataset(data.Dataset): ## 1 for REDS dataset
     def __getitem__(self, index):
         key = self.gt_frames[index][0]
         frame_len = self.gt_frames[index][1]
+        short_side_length = self.short_side_length
 
         ## Fetch the parent directory of clip name
         gt_directory_path = os.path.dirname(os.path.dirname(self.gt_frames[index][0]))
@@ -161,8 +160,8 @@ class TestDataset(data.Dataset): ## 1 for REDS dataset
         for i in range(len(img_gts)):
             # img_gts[i] = cv2.resize(img_gts[i], (gt_size_w, gt_size_h), interpolation = cv2.INTER_AREA)
             # img_lqs[i] = cv2.resize(img_lqs[i], (gt_size_w, gt_size_h), interpolation = cv2.INTER_AREA)
-            img_gts[i] = resize_368_short_side(img_gts[i])
-            img_lqs[i] = resize_368_short_side(img_lqs[i])
+            img_gts[i] = resize_and_transfer_frame(img_gts[i], short_side_length, 16)
+            img_lqs[i] = resize_and_transfer_frame(img_lqs[i], short_side_length, 16)
             if self.colorization:
                 img_gts[i] = convert_to_L(img_gts[i])
                 img_lqs[i] = convert_to_L(img_lqs[i])
@@ -298,8 +297,8 @@ class Film_dataset_1(data.Dataset): ## 1 for REDS dataset
             for i in range(len(img_gts)):
                 # img_gts[i] = cv2.resize(img_gts[i], (gt_size_w, gt_size_h), interpolation = cv2.INTER_AREA)
                 # img_lqs[i] = cv2.resize(img_lqs[i], (gt_size_w, gt_size_h), interpolation = cv2.INTER_AREA)
-                img_gts[i] = resize_368_short_side(img_gts[i])
-                img_lqs[i] = resize_368_short_side(img_lqs[i])
+                img_gts[i] = resize_and_transfer_frame(img_gts[i], 368, 16)
+                img_lqs[i] = resize_and_transfer_frame(img_lqs[i], 368, 16)
                 if self.data_config['name']=='colorization':
                     img_gts[i] = convert_to_L(img_gts[i])
                     img_lqs[i] = convert_to_L(img_lqs[i])
@@ -891,7 +890,7 @@ class Film_dataset_6(data.Dataset): ## 6 for DAVIS&YoutubeVOS dataset + Coloriza
                 # img_gt_path = os.path.join(current_gt_root, clip_name, f'{frame:05d}.jpg') ## Adaptive for DAVIS and YoutubeVOS
                 img_gt_path = os.path.join(current_gt_root, clip_name, new_clip_sequence[frame])
                 current_frame = Image.open(img_gt_path).convert("RGB")
-                current_frame = resize_256_short_side(current_frame)
+                current_frame = resize_frame(current_frame, 256)
                 img_gt=rgb2lab(current_frame)
                 img_gts.append(np.array(img_gt))
             else:
@@ -939,7 +938,7 @@ class Film_dataset_6(data.Dataset): ## 6 for DAVIS&YoutubeVOS dataset + Coloriza
             img_gts = torch.stack(img_results[self.num_frame:], dim=0)
         else:
             img_lqs = torch.stack(img_results[:current_len], dim=0)
-            img_gts = torch.stack(img_results[current_len:], dim=0)           
+            img_gts = torch.stack(img_results[current_len:], dim=0)
 
         # img_lqs: (t, c, h, w)
         # img_gt: (t, c, h, w)
@@ -1033,7 +1032,7 @@ class Film_dataset_7(data.Dataset): ## 7 for DAVIS&YoutubeVOS dataset + Coloriza
                 # img_gt_path = os.path.join(current_gt_root, clip_name, f'{frame:05d}.jpg') ## Adaptive for DAVIS and YoutubeVOS
                 img_gt_path = os.path.join(current_gt_root, clip_name, new_clip_sequence[frame])
                 current_frame = Image.open(img_gt_path).convert("RGB")
-                current_frame = resize_256_short_side(current_frame)
+                current_frame = resize_frame(current_frame, 256)
                 img_gt=rgb2lab(current_frame)
                 img_gts.append(np.array(img_gt))
             else:
@@ -1175,7 +1174,7 @@ class Film_dataset_8(data.Dataset): ## 7 for DAVIS&YoutubeVOS dataset + Coloriza
                 # img_gt_path = os.path.join(current_gt_root, clip_name, f'{frame:05d}.jpg') ## Adaptive for DAVIS and YoutubeVOS
                 img_gt_path = os.path.join(current_gt_root, clip_name, new_clip_sequence[frame])
                 current_frame = Image.open(img_gt_path).convert("RGB")
-                current_frame = resize_256_short_side(current_frame)
+                current_frame = resize_frame(current_frame, 256)
                 img_gt=rgb2lab(current_frame)
                 img_gts.append(np.array(img_gt))
             else:
